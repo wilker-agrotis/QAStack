@@ -1,0 +1,33 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: #0d1117; }
+::-webkit-scrollbar-thumb { background: #21262d; border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: #30363d; }
+
+@keyframes pulse-border {
+  0%, 100% { border-color: rgba(56, 189, 248, 0.45); }
+  50% { border-color: rgba(56, 189, 248, 0.9); }
+}
+.running-card { animation: pulse-border 2s infinite; }
+
+/* Chips de flags (--headed, --trace, --last-failed) */
+.flag-chip { display: flex; align-items: center; gap: 10px; padding: 6px 12px 6px 8px; border-radius: 10px; border: 1px solid #30363d; background: #0d1117; transition: .15s; }
+.flag-chip:hover { border-color: #484f58; }
+.flag-trk { position: relative; width: 28px; height: 16px; border-radius: 9999px; background: #30363d; transition: .15s; flex-shrink: 0; }
+.flag-trk::after { content: ''; position: absolute; top: 2px; left: 2px; width: 12px; height: 12px; border-radius: 50%; background: #8b949e; transition: .15s; }
+.flag-in:checked + .flag-chip { border-color: rgba(46,173,51,.55); background: rgba(46,173,51,.08); }
+.flag-in:checked + .flag-chip .flag-trk { background: #2EAD33; }
+.flag-in:checked + .flag-chip .flag-trk::after { transform: translateX(12px); background: #fff; }
+.flag-in:focus-visible + .flag-chip { outline: 2px solid #38bdf8; outline-offset: 2px; }
+.flag-in:disabled + .flag-chip { opacity: .45; cursor: not-allowed; }
+
+.fix-steps code { font-family: 'JetBrains Mono', Consolas, monospace; color: #e2e8f0; }

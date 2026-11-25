@@ -1,0 +1,8 @@
+node_modules/
+out/
+dist/
+*.log
+.DS_Store
+
+# Repositório de testes clonado pelo próprio app (padrão: C:\QASTACK\web-erp-automatizados)
+web-erp-automatizados/
