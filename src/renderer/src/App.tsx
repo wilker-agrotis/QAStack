@@ -14,7 +14,7 @@ import { ConsolePanel } from './components/ConsolePanel'
 import { ExecPanel, type ExecSettings } from './components/ExecPanel'
 import { FilterBar, type StatusFilter } from './components/FilterBar'
 import { Metrics } from './components/Metrics'
-import { CodegenModal, EnvCheckModal, SuiteDetailsModal } from './components/Modals'
+import { CodegenModal, EnvCheckModal, FailedTestsModal, SuiteDetailsModal, type FailedGroup } from './components/Modals'
 import { RepoPanel } from './components/RepoPanel'
 import { RunProgress, type RunProgressState } from './components/RunProgress'
 import { SuiteCard } from './components/SuiteCard'
@@ -62,6 +62,7 @@ export default function App() {
   const [progress, setProgress] = useState<RunProgressState | null>(null)
   const progressRef = useRef(progress)
   progressRef.current = progress
+  const [failuresOpen, setFailuresOpen] = useState(false)
   const [, setTick] = useState(0)
 
   const [logs, setLogs] = useState<LogLine[]>([
@@ -185,6 +186,7 @@ export default function App() {
   function commitProgress(next: RunProgressState | null) {
     progressRef.current = next
     setProgress(next)
+    if (!next) setFailuresOpen(false)
   }
 
   /** Atualiza a barra do "Rodar Tudo" (só para a execução que ela acompanha). */
@@ -441,6 +443,15 @@ export default function App() {
   const newCases = suites.filter((s) => !s.isNew).reduce((a, s) => a + s.cases.filter((c) => c.isNew).length, 0)
   const details = suites.find((s) => s.file === detailsFile) ?? null
 
+  // casos que falharam na execução acompanhada pela barra, agrupados por suíte
+  const progressRunId = progress?.runId
+  const failedGroups = useMemo<FailedGroup[]>(() => {
+    if (!progressRunId) return []
+    return suites
+      .map((suite) => ({ suite, cases: suite.cases.filter((c) => c.status === 'failed' && c.runId === progressRunId) }))
+      .filter((g) => g.cases.length > 0)
+  }, [suites, progressRunId])
+
   // cada suíte conta o próprio tempo: do primeiro caso dela até o último
   function elapsedFor(file: string): number {
     const r = runs[file]
@@ -467,7 +478,9 @@ export default function App() {
           />
         </div>
 
-        {progress && <RunProgress progress={progress} onClose={() => commitProgress(null)} />}
+        {progress && (
+          <RunProgress progress={progress} onClose={() => commitProgress(null)} onShowFailures={() => setFailuresOpen(true)} />
+        )}
 
         <Metrics suites={suites} />
 
@@ -595,6 +608,16 @@ export default function App() {
         onRun={() => {
           if (details) startRun([details.file])
           setDetailsFile(null)
+        }}
+      />
+      <FailedTestsModal
+        open={failuresOpen && !!progress}
+        onClose={() => setFailuresOpen(false)}
+        groups={failedGroups}
+        running={progress?.outcome === 'running'}
+        onOpenSuite={(file) => {
+          setFailuresOpen(false)
+          setDetailsFile(file)
         }}
       />
       <CodegenModal

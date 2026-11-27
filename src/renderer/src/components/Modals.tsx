@@ -231,3 +231,119 @@ export function CodegenModal(props: { open: boolean; onClose: () => void; onLaun
     </Modal>
   )
 }
+
+// ---------- Falhas da execução ----------
+export interface FailedGroup {
+  suite: Suite
+  cases: Suite['cases']
+}
+
+/** Primeira linha útil do erro, para a prévia com o erro recolhido. */
+function firstLine(error?: string): string {
+  return (error ?? '').split('\n').map((l) => l.trim()).find(Boolean) ?? 'Sem mensagem de erro.'
+}
+
+export function FailedTestsModal(props: {
+  open: boolean
+  onClose: () => void
+  groups: FailedGroup[]
+  /** A execução ainda está rodando: a lista cresce enquanto o modal está aberto. */
+  running: boolean
+  onOpenSuite: (file: string) => void
+}) {
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({})
+  const [copied, setCopied] = useState(false)
+  const totalCases = props.groups.reduce((n, g) => n + g.cases.length, 0)
+  const toggle = (key: string) => setExpanded((e) => ({ ...e, [key]: !e[key] }))
+  const allOpen = totalCases > 0 && props.groups.every((g) => g.cases.every((c) => expanded[c.key]))
+
+  async function copyList() {
+    const text = props.groups
+      .map((g) => [`${g.suite.title} (${g.suite.file})`, ...g.cases.map((c) => `  ✗ ${c.title}\n    ${firstLine(c.error)}`)].join('\n'))
+      .join('\n\n')
+    await navigator.clipboard.writeText(text)
+    setCopied(true)
+    window.setTimeout(() => setCopied(false), 1800)
+  }
+
+  return (
+    <Modal
+      open={props.open}
+      onClose={props.onClose}
+      width="max-w-3xl"
+      title={<span className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full bg-rose-500" />Testes que falharam</span>}
+      subtitle={
+        <>
+          {totalCases} {totalCases === 1 ? 'caso' : 'casos'} em {props.groups.length} {props.groups.length === 1 ? 'suíte' : 'suítes'}
+          {props.running && <span className="text-sky-300"> · execução em andamento, a lista atualiza sozinha</span>}
+        </>
+      }
+      footer={
+        <>
+          <button
+            onClick={() => setExpanded(allOpen ? {} : Object.fromEntries(props.groups.flatMap((g) => g.cases.map((c) => [c.key, true]))))}
+            disabled={!totalCases}
+            className="mr-auto text-xs text-slate-400 hover:text-white disabled:opacity-40"
+          >
+            {allOpen ? 'Recolher todos os erros' : 'Expandir todos os erros'}
+          </button>
+          <button onClick={copyList} disabled={!totalCases} className="bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-200 text-xs px-3.5 py-1.5 rounded-lg">
+            {copied ? 'Copiado!' : 'Copiar lista'}
+          </button>
+          <button onClick={props.onClose} className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold px-4 py-1.5 rounded-lg">
+            Fechar
+          </button>
+        </>
+      }
+    >
+      <div className="p-5 max-h-[60vh] overflow-y-auto space-y-4">
+        {!totalCases && <div className="text-xs text-slate-400 text-center py-6">Nenhum teste falhou nesta execução.</div>}
+        {props.groups.map((g) => (
+          <div key={g.suite.file} className="border border-rose-500/25 rounded-xl overflow-hidden">
+            <div className="flex items-center justify-between gap-3 px-3.5 py-2.5 bg-rose-500/10 border-b border-rose-500/20">
+              <div className="min-w-0">
+                <div className="text-xs font-semibold text-slate-100 truncate" title={g.suite.title}>{g.suite.title}</div>
+                <div className="text-[11px] font-mono text-slate-500 truncate" title={g.suite.file}>{g.suite.file}</div>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300">
+                  {g.cases.length} de {g.suite.cases.length} {g.suite.cases.length === 1 ? 'caso' : 'casos'}
+                </span>
+                <button onClick={() => props.onOpenSuite(g.suite.file)} className="text-[11px] text-slate-400 hover:text-white px-2 py-0.5 rounded hover:bg-slate-800">
+                  Ver suíte
+                </button>
+              </div>
+            </div>
+            <div className="divide-y divide-slate-800/80 bg-[#0d1117]">
+              {g.cases.map((c) => {
+                const open = !!expanded[c.key]
+                return (
+                  <div key={c.key} className="px-3.5 py-2.5">
+                    <button onClick={() => toggle(c.key)} className="w-full flex items-start justify-between gap-3 text-left group">
+                      <div className="flex items-start gap-2.5 min-w-0">
+                        <span className="mt-0.5 w-4 h-4 rounded-full bg-rose-500/20 text-rose-400 flex items-center justify-center text-[10px] font-bold shrink-0">✕</span>
+                        <div className="min-w-0">
+                          <div className="text-xs text-rose-200 group-hover:text-white">{c.title}</div>
+                          {!open && <div className="text-[11px] font-mono text-slate-500 truncate mt-0.5">{firstLine(c.error)}</div>}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className="text-[11px] font-mono text-slate-500">{formatDuration(c.durationMs)}</span>
+                        <span className="text-[11px] text-slate-500">{open ? '▲' : '▼'}</span>
+                      </div>
+                    </button>
+                    {open && (
+                      <pre className="mt-2 ml-6 p-2.5 rounded bg-rose-950/30 border border-rose-500/30 text-[11px] font-mono text-rose-300 overflow-x-auto whitespace-pre-wrap">
+                        {c.error ?? 'Sem mensagem de erro.'}
+                      </pre>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
+    </Modal>
+  )
+}

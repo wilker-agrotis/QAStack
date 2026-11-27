@@ -31,7 +31,7 @@ const OUTCOME: Record<ProgressOutcome, { label: string; cls: string }> = {
   error: { label: 'A execução terminou antes de rodar os testes. Veja o console.', cls: 'text-rose-300' }
 }
 
-export function RunProgress({ progress: p, onClose }: { progress: RunProgressState; onClose: () => void }) {
+export function RunProgress({ progress: p, onClose, onShowFailures }: { progress: RunProgressState; onClose: () => void; onShowFailures: () => void }) {
   const running = p.outcome === 'running'
   const total = p.total ?? 0
   const done = Math.min(progressDone(p), total)
@@ -75,6 +75,14 @@ export function RunProgress({ progress: p, onClose }: { progress: RunProgressSta
           {p.skipped > 0 && <span className="text-slate-400" title="Pulados">⤼ {p.skipped}</span>}
           <span className="text-slate-400" title="Tempo decorrido">⏱ {formatTime(elapsedSec)}</span>
           {etaSec !== null && <span className="text-slate-500" title="Estimativa de tempo restante">~{formatTime(etaSec)} restantes</span>}
+          {p.failed > 0 && (
+            <button
+              onClick={onShowFailures}
+              className="font-sans text-[11px] font-medium text-rose-300 hover:text-white bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/30 px-2.5 py-0.5 rounded-md transition"
+            >
+              Ver falhas
+            </button>
+          )}
           {!running && (
             <button onClick={onClose} aria-label="Fechar" className="text-slate-500 hover:text-white p-0.5 rounded hover:bg-slate-800">
               <IconX className="w-3.5 h-3.5" />
