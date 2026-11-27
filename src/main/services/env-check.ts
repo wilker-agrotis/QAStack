@@ -47,7 +47,11 @@ export function satisfiesEngine(version: string, range: string): boolean {
     )
 }
 
-function sshHostFromUrl(url: string): string | null {
+export function gitHostName(host: string): string {
+  return /github/i.test(host) ? 'GitHub' : /gitlab/i.test(host) ? 'GitLab' : 'Bitbucket'
+}
+
+export function sshHostFromUrl(url: string): string | null {
   const scp = url.match(/^[\w.-]+@([\w.-]+):/)
   if (scp) return scp[1]
   const ssh = url.match(/^ssh:\/\/(?:[\w.-]+@)?([\w.-]+)/)
@@ -61,7 +65,8 @@ async function checkGit(): Promise<EnvCheckItem> {
     : {
         id: 'git', name: 'Git for Windows', blocking: true, status: 'missing',
         detail: 'Git não encontrado no PATH.',
-        fix: ['Instale o Git for Windows (git-scm.com) e reabra o QAStack.']
+        autoFix: true, installLabel: 'Instalar Git for Windows',
+        fix: ['Ou instale manualmente pelo site git-scm.com e clique em Verificar novamente.']
       }
 }
 
@@ -71,7 +76,8 @@ async function checkNode(dir: string, cloned: boolean): Promise<EnvCheckItem> {
     return {
       id: 'node', name: 'Node.js', blocking: true, status: 'missing',
       detail: 'Node.js não encontrado no PATH.',
-      fix: ['Instale o Node.js LTS (nodejs.org) e reabra o QAStack.']
+      autoFix: true, installLabel: 'Instalar Node.js LTS',
+      fix: ['Ou instale manualmente pelo site nodejs.org e clique em Verificar novamente.']
     }
   }
   const version = firstLine(r.stdout)
@@ -96,7 +102,9 @@ async function checkNpm(): Promise<EnvCheckItem> {
     ? { id: 'npm', name: 'npm', blocking: true, status: 'ok', detail: firstLine(r.stdout) }
     : {
         id: 'npm', name: 'npm', blocking: true, status: 'missing',
-        detail: 'npm não encontrado.', fix: ['O npm vem junto com o Node.js: reinstale o Node.js LTS.']
+        detail: 'npm não encontrado.',
+        autoFix: true, installLabel: 'Reinstalar Node.js LTS (inclui npm)',
+        fix: ['O npm vem junto com o Node.js. Ou reinstale manualmente pelo site nodejs.org.']
       }
 }
 
@@ -114,10 +122,13 @@ async function checkSsh(repoUrl: string): Promise<EnvCheckItem> {
     return { ...base, status: 'ok', detail: `Autenticado em ${host}` }
   }
   const pubKey = isWindows ? '%USERPROFILE%\\.ssh\\id_ed25519.pub' : '~/.ssh/id_ed25519.pub'
+  const noClient = /not recognized|not found|ENOENT/i.test(out)
   return {
     ...base,
     status: 'missing',
-    detail: /not recognized|not found|ENOENT/i.test(out)
+    autoFix: true,
+    installLabel: noClient ? 'Instalar Git for Windows (inclui SSH)' : `Gerar chave e abrir o ${gitHostName(host)}`,
+    detail: noClient
       ? 'Cliente SSH não encontrado no PATH.'
       : `Nenhuma chave autorizada em ${host}. O clone usa ${repoUrl}.`,
     fix: [
@@ -187,7 +198,7 @@ async function checkBrowsers(dir: string, cloned: boolean): Promise<EnvCheckItem
   }
   if (!result.missing.length) return { ...base, status: 'ok', detail: `Versões exigidas pelo repositório instaladas: ${result.required.join(', ')}` }
   return {
-    ...base, status: 'missing', autoFix: true,
+    ...base, status: 'missing', autoFix: true, installLabel: 'Instalar navegadores',
     detail: `Faltando para o Playwright do repositório: ${result.missing.join(', ')}. O QAStack pode instalar automaticamente.`
   }
 }
@@ -210,7 +221,8 @@ function checkDeps(dir: string, cloned: boolean): EnvCheckItem {
   return {
     ...base, status: 'missing',
     detail: 'Dependências ausentes no repositório clonado.',
-    fix: ['Clique em <strong>Baixar / Sync</strong> para instalar com npm ci.']
+    autoFix: true, installLabel: 'Instalar dependências (npm ci)',
+    fix: ['Ou clique em <strong>Baixar / Sync</strong>, que também instala as dependências.']
   }
 }
 

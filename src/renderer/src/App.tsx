@@ -16,6 +16,7 @@ import { FilterBar, type StatusFilter } from './components/FilterBar'
 import { Metrics } from './components/Metrics'
 import { CodegenModal, EnvCheckModal, SuiteDetailsModal } from './components/Modals'
 import { RepoPanel } from './components/RepoPanel'
+import { RunProgress, type RunProgressState } from './components/RunProgress'
 import { SuiteCard } from './components/SuiteCard'
 import { TitleBar } from './components/TitleBar'
 import { Toast } from './components/ui'
@@ -48,7 +49,7 @@ export default function App() {
   const [env, setEnv] = useState<EnvCheckItem[]>([])
   const [envBusy, setEnvBusy] = useState(true)
   const [envOpen, setEnvOpen] = useState(false)
-  const [installing, setInstalling] = useState(false)
+  const [installing, setInstalling] = useState<EnvCheckItem['id'] | null>(null)
 
   const [syncing, setSyncing] = useState(false)
   const [syncError, setSyncError] = useState<string | null>(null)
@@ -57,15 +58,23 @@ export default function App() {
   const runsRef = useRef(runs)
   runsRef.current = runs
   const [elapsed, setElapsed] = useState<Record<string, number>>({}) // tempo congelado ao fim
+  // barra de progresso do "Rodar Tudo"
+  const [progress, setProgress] = useState<RunProgressState | null>(null)
+  const progressRef = useRef(progress)
+  progressRef.current = progress
   const [, setTick] = useState(0)
 
   const [logs, setLogs] = useState<LogLine[]>([
     { text: '[QAStack] Pronto.', level: 'default', at: new Date().toISOString() }
   ])
   const [lastCommand, setLastCommand] = useState('')
+  const [reportAt, setReportAt] = useState<string | null>(null)
+  const refreshReport = useCallback(() => {
+    api.reportInfo().then((r) => setReportAt(r.generatedAt)).catch(() => setReportAt(null))
+  }, [])
 
   const [opts, setOpts] = useState<ExecSettings>({
-    mode: 'normal', project: 'chromium', workers: 2, headed: true, trace: true, lastFailed: false
+    mode: 'normal', project: 'chromium', workers: null, headed: true, trace: 'config', lastFailed: false
   })
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
@@ -100,6 +109,7 @@ export default function App() {
   const loadRepo = useCallback(async () => {
     const st = await api.getState()
     setState(st)
+    refreshReport()
     if (!st.cloned) {
       // antes do clone, busca as branches reais do remoto (precisa da chave SSH)
       const br = await api.listBranches()
@@ -115,14 +125,20 @@ export default function App() {
       setOpts((o) => (disc.projects.includes(o.project) || o.project === 'all' ? o : { ...o, project: disc.projects[0] }))
     }
     if (!disc.ok && disc.error) showToast(disc.error)
-  }, [showToast])
+  }, [showToast, refreshReport])
 
   useEffect(() => {
     const offs = [
       api.onLog((line) => setLogs((l) => [...l, line].slice(-MAX_LOG))),
       api.onTestEvent(handleTestEvent),
-      api.onRunFinished(handleRunFinished)
+      api.onRunFinished((ev) => {
+        handleRunFinished(ev)
+        refreshReport()
+      })
     ]
+    // report gerado fora do QAStack (terminal) aparece ao voltar para a janela
+    window.addEventListener('focus', refreshReport)
+    offs.push(() => window.removeEventListener('focus', refreshReport))
     // A verificação abre sozinha na inicialização, a menos que o usuário tenha marcado
     // "Não mostrar novamente". Se houver pendência, abre de qualquer jeito.
     api.getState().then((st) => {
@@ -137,13 +153,14 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // relógio dos cards em execução
+  // relógio dos cards em execução e da barra de progresso
   const anyRunning = Object.keys(runs).length > 0
+  const progressRunning = progress?.outcome === 'running'
   useEffect(() => {
-    if (!anyRunning) return
+    if (!anyRunning && !progressRunning) return
     const t = window.setInterval(() => setTick((n) => n + 1), 1000)
     return () => window.clearInterval(t)
-  }, [anyRunning])
+  }, [anyRunning, progressRunning])
 
   // ---------- eventos da execução ----------
   /** Atualiza o mapa de execuções já no ref, para eventos em sequência enxergarem o valor novo. */
@@ -165,7 +182,26 @@ export default function App() {
     return Object.entries(info.expected).every(([k, n]) => (info.done[k] ?? 0) >= n)
   }
 
+  function commitProgress(next: RunProgressState | null) {
+    progressRef.current = next
+    setProgress(next)
+  }
+
+  /** Atualiza a barra do "Rodar Tudo" (só para a execução que ela acompanha). */
+  function updateProgress(ev: TestEvent) {
+    const p = progressRef.current
+    if (!p || p.runId !== ev.runId || p.outcome !== 'running') return
+    if (ev.type === 'begin') return commitProgress({ ...p, total: ev.total })
+    // tentativa que ainda vai ter retry e teste cortado pelo Parar não contam como concluídos
+    if (ev.type !== 'testEnd' || ev.final === false || ev.status === 'interrupted') return
+    const st = mapStatus(ev.status) as 'passed' | 'failed' | 'skipped'
+    const next = { ...p, lastTitle: caseTitleFromKey(ev.key).split(' › ').pop(), lastStatus: st }
+    next[st] += 1
+    commitProgress(next)
+  }
+
   function handleTestEvent(ev: TestEvent) {
+    updateProgress(ev)
     const now = Date.now()
     const runs0 = runsRef.current
     const files = Object.keys(runs0).filter((f) => runs0[f].runId === ev.runId)
@@ -192,7 +228,7 @@ export default function App() {
       const next = { ...runs0 }
       const info = { ...next[file], done: { ...next[file].done } }
       if (ev.type === 'testBegin' && !info.startedAt) info.startedAt = now
-      if (ev.type === 'testEnd') info.done[ev.key] = (info.done[ev.key] ?? 0) + 1
+      if (ev.type === 'testEnd' && ev.final !== false) info.done[ev.key] = (info.done[ev.key] ?? 0) + 1
       next[file] = info
       if (ev.type === 'testEnd' && allDone(info)) finishSuite(next, file, now)
       commitRuns(next)
@@ -211,6 +247,8 @@ export default function App() {
               if (sameRun && c.status === 'failed') return c
               return { ...c, status: 'running' as const, startedAt: now, runId: ev.runId, ...(sameRun ? {} : { error: undefined, durationMs: undefined }) }
             }
+            // tentativa com retry pela frente: o caso continua "em execução"
+            if (ev.final === false) return c
             // vários projetos (navegadores) podem rodar o mesmo caso: falha prevalece na mesma execução
             const next = mapStatus(ev.status)
             const keepFailed = sameRun && c.status === 'failed'
@@ -230,6 +268,17 @@ export default function App() {
 
   function handleRunFinished(ev: RunFinished) {
     const now = Date.now()
+    const p = progressRef.current
+    if (p && p.runId === ev.runId && p.outcome === 'running') {
+      const outcome = ev.stopped
+        ? 'stopped'
+        : (p.total === null || p.total === 0) && ev.exitCode !== 0
+          ? 'error'
+          : p.failed > 0 || ev.exitCode !== 0
+            ? 'failed'
+            : 'passed'
+      commitProgress({ ...p, finishedAt: now, outcome })
+    }
     const prev = runsRef.current
     // só sobram aqui as suítes que não terminaram sozinhas (parada pelo usuário, erro, UI Mode...)
     const left = Object.keys(prev).filter((f) => prev[f].runId === ev.runId)
@@ -305,6 +354,13 @@ export default function App() {
       if (files.length === 0) await clearAllResults(false)
       const started = await api.run({ ...opts, files, grepTag })
       setLastCommand(started.command)
+      // UI Mode tem tela própria e não usa o reporter do QAStack: sem barra
+      if (files.length === 0 && opts.mode !== 'ui') {
+        commitProgress({
+          runId: started.runId, total: null, passed: 0, failed: 0, skipped: 0,
+          startedAt: Date.now(), finishedAt: null, outcome: 'running'
+        })
+      }
       const n = { ...runsRef.current }
       for (const s of targets) n[s.file] = { runId: started.runId, startedAt: null, expected: null, done: {} }
       commitRuns(n)
@@ -326,6 +382,7 @@ export default function App() {
   async function clearAllResults(notify = true) {
     await api.clearResults()
     setElapsed({})
+    if (progressRef.current?.outcome !== 'running') commitProgress(null)
     setSuites((ss) =>
       ss.map((s) => ({
         ...s,
@@ -409,6 +466,8 @@ export default function App() {
             onCodegen={() => setCodegenOpen(true)}
           />
         </div>
+
+        {progress && <RunProgress progress={progress} onClose={() => commitProgress(null)} />}
 
         <Metrics suites={suites} />
 
@@ -500,7 +559,8 @@ export default function App() {
         onCopy={copyCommand}
         onReport={() => api.openReport()}
         onDownloadReport={downloadReport}
-        canReport={!!state?.cloned}
+        canReport={!!state?.cloned && !!reportAt}
+        reportAt={reportAt}
       />
 
       <EnvCheckModal
@@ -515,12 +575,15 @@ export default function App() {
           await api.setShowEnvOnStartup(show)
           setState((s) => (s ? { ...s, showEnvOnStartup: show } : s))
         }}
-        onInstallBrowsers={async () => {
-          setInstalling(true)
+        onInstall={async (id) => {
+          setInstalling(id)
           try {
-            await api.installBrowsers()
+            const r = await api.installEnvItem(id)
+            if (r.message) showToast(r.message)
+          } catch (e) {
+            showToast((e as Error).message)
           } finally {
-            setInstalling(false)
+            setInstalling(null)
             refreshEnv()
           }
         }}
@@ -537,10 +600,10 @@ export default function App() {
       <CodegenModal
         open={codegenOpen}
         onClose={() => setCodegenOpen(false)}
-        onLaunch={(o) => {
-          api.codegen(o)
+        onLaunch={async (o) => {
           setCodegenOpen(false)
-          showToast('Playwright Codegen iniciado!')
+          const r = await api.codegen(o)
+          showToast(r.ok ? 'Playwright Codegen iniciado!' : r.error ?? 'Não foi possível iniciar o Codegen')
         }}
       />
       <Toast message={toast} />

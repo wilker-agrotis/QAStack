@@ -9,9 +9,10 @@ export function EnvCheckModal(props: {
   onClose: () => void
   items: EnvCheckItem[]
   busy: boolean
-  installing: boolean
+  /** Item sendo instalado agora (só um por vez). */
+  installing: EnvCheckItem['id'] | null
   onRecheck: () => void
-  onInstallBrowsers: () => void
+  onInstall: (id: EnvCheckItem['id']) => void
   showOnStartup: boolean
   onShowOnStartupChange: (show: boolean) => void
 }) {
@@ -51,7 +52,7 @@ export function EnvCheckModal(props: {
             />
             Não mostrar novamente ao abrir
           </label>
-          <button onClick={props.onRecheck} disabled={props.busy} className="bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-200 text-xs px-3.5 py-1.5 rounded-lg">
+          <button onClick={props.onRecheck} disabled={props.busy || !!props.installing} className="bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-200 text-xs px-3.5 py-1.5 rounded-lg">
             Verificar novamente
           </button>
           <button onClick={props.onClose} className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold px-4 py-1.5 rounded-lg">
@@ -65,7 +66,7 @@ export function EnvCheckModal(props: {
           <div className="flex items-center gap-2 text-xs text-slate-400"><Spinner /> Verificando Git, Node.js, npm, SSH e Playwright…</div>
         )}
         {props.items.map((c) => {
-          const status = c.id === 'browsers' && props.installing ? 'installing' : props.busy ? 'checking' : c.status
+          const status = props.installing === c.id ? 'installing' : props.busy ? 'checking' : c.status
           const [label, color] = labels[status]
           return (
             <div key={c.id} className={`bg-[#0d1117] border ${status === 'missing' ? 'border-amber-500/40' : 'border-slate-800'} rounded-lg p-3`}>
@@ -74,7 +75,7 @@ export function EnvCheckModal(props: {
                 <div className="flex-1 min-w-0">
                   <div className="text-xs font-semibold text-slate-100">{c.name}</div>
                   <div className="text-[11px] text-slate-400 mt-0.5 break-words">
-                    {status === 'installing' ? 'Executando npx playwright install...' : c.detail}
+                    {status === 'installing' ? 'Instalando... acompanhe o progresso no console.' : c.detail}
                   </div>
                 </div>
                 <span className={`text-[11px] font-medium shrink-0 ${color}`}>{label}</span>
@@ -87,8 +88,13 @@ export function EnvCheckModal(props: {
               )}
               {status === 'missing' && c.autoFix && (
                 <div className="mt-2.5 ml-8">
-                  <button onClick={props.onInstallBrowsers} className="bg-sky-600 hover:bg-sky-500 text-white text-[11px] font-semibold px-3 py-1.5 rounded-md transition">
-                    Instalar agora
+                  <button
+                    onClick={() => props.onInstall(c.id)}
+                    disabled={!!props.installing || props.busy}
+                    title={props.installing ? 'Aguarde a instalação em andamento terminar' : undefined}
+                    className="bg-sky-600 hover:bg-sky-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-[11px] font-semibold px-3 py-1.5 rounded-md transition"
+                  >
+                    {c.installLabel ?? 'Instalar agora'}
                   </button>
                 </div>
               )}
@@ -180,9 +186,8 @@ export function SuiteDetailsModal(props: { suite: Suite | null; onClose: () => v
 // ---------- Codegen ----------
 export function CodegenModal(props: { open: boolean; onClose: () => void; onLaunch: (o: CodegenOptions) => void }) {
   const [url, setUrl] = useState('')
-  const [output, setOutput] = useState('tests/gravado/novo-fluxo.spec.ts')
   const [device, setDevice] = useState('')
-  const cmd = `npx playwright codegen ${device ? `--device="${device}" ` : ''}${output ? `-o ${output} ` : ''}${url}`
+  const cmd = `npx playwright codegen ${device ? `--device="${device}" ` : ''}${url.trim()}`
   const input = 'w-full bg-[#0d1117] border border-slate-700 rounded-lg px-3 py-2 text-xs font-mono text-slate-200 focus:outline-none focus:border-purple-500'
   return (
     <Modal
@@ -194,7 +199,7 @@ export function CodegenModal(props: { open: boolean; onClose: () => void; onLaun
         <>
           <button onClick={props.onClose} className="bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs px-3.5 py-1.5 rounded-lg">Cancelar</button>
           <button
-            onClick={() => props.onLaunch({ url: url.trim(), output: output.trim(), device: device || undefined })}
+            onClick={() => props.onLaunch({ url: url.trim(), device: device || undefined })}
             className="bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold px-4 py-1.5 rounded-lg transition"
           >
             Iniciar Gravação
@@ -204,25 +209,19 @@ export function CodegenModal(props: { open: boolean; onClose: () => void; onLaun
     >
       <div className="p-5 space-y-4">
         <p className="text-xs text-slate-400">
-          Abre o inspetor do Playwright para gravar ações no navegador e gerar o código TypeScript dentro do repositório clonado.
+          Abre o inspetor do Playwright para gravar ações no navegador e gerar o código TypeScript no Inspector. Nada é salvo no repositório: copie o código do Inspector se quiser usá-lo.
         </p>
         <div>
           <label className="block text-xs font-medium text-slate-300 mb-1">URL alvo da gravação</label>
           <input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://..." className={input} />
         </div>
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="block text-xs font-medium text-slate-300 mb-1">Salvar arquivo em</label>
-            <input value={output} onChange={(e) => setOutput(e.target.value)} className={input} />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-slate-300 mb-1">Dispositivo / Viewport</label>
-            <select value={device} onChange={(e) => setDevice(e.target.value)} className={input}>
-              <option value="">Desktop (padrão)</option>
-              <option value="iPhone 14">iPhone 14</option>
-              <option value="Pixel 7">Pixel 7</option>
-            </select>
-          </div>
+        <div>
+          <label className="block text-xs font-medium text-slate-300 mb-1">Dispositivo / Viewport</label>
+          <select value={device} onChange={(e) => setDevice(e.target.value)} className={input}>
+            <option value="">Desktop (padrão)</option>
+            <option value="iPhone 14">iPhone 14</option>
+            <option value="Pixel 7">Pixel 7</option>
+          </select>
         </div>
         <div className="bg-[#090c10] border border-slate-800 rounded-lg p-3">
           <span className="text-[10px] uppercase tracking-wider text-slate-500 block mb-1">Comando gerado:</span>

@@ -31,3 +31,10 @@ body,
 .flag-in:disabled + .flag-chip { opacity: .45; cursor: not-allowed; }
 
 .fix-steps code { font-family: 'JetBrains Mono', Consolas, monospace; color: #e2e8f0; }
+
+/* barra de progresso enquanto o Playwright ainda não informou o total */
+@keyframes qastack-indeterminate {
+  0% { left: -33%; }
+  100% { left: 100%; }
+}
+.progress-indeterminate { animation: qastack-indeterminate 1.2s ease-in-out infinite; }

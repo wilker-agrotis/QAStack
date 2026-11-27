@@ -20,7 +20,7 @@ async function git(args: string[], cwd?: string): Promise<{ ok: boolean; out: st
 }
 
 /** Instala as dependências do repositório (npm ci) quando o package-lock mudou. */
-async function ensureDeps(dir: string, force = false): Promise<boolean> {
+export async function ensureDeps(dir: string, force = false): Promise<boolean> {
   const s = loadSettings()
   const hash = lockHash(dir)
   const hasModules = existsSync(`${dir}/node_modules`)

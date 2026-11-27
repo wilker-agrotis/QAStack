@@ -2,7 +2,7 @@ import { app, BrowserWindow, shell } from 'electron'
 import { join } from 'path'
 import { registerIpc } from './ipc'
 import { attachWindow } from './services/logger'
-import { stopAll } from './services/runner'
+import { stopAll, stopReportServer } from './services/runner'
 
 function createWindow(): void {
   const win = new BrowserWindow({
@@ -48,7 +48,10 @@ app.whenReady().then(() => {
 })
 
 // garante que nenhum processo do Playwright fique órfão ao fechar o app
-app.on('before-quit', () => stopAll())
+app.on('before-quit', () => {
+  stopAll()
+  stopReportServer()
+})
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()

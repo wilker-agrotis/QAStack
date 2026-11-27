@@ -48,12 +48,21 @@ class QAStackReporter {
   onTestEnd(test, result) {
     const { key, file } = keyOf(test)
     const err = result.error && (result.error.message || result.error.value || '')
+    // Com retries o Playwright chama onTestEnd a cada tentativa. "final" diz se esta foi a última:
+    // passou/pulou, acabaram as tentativas ou a execução foi interrompida.
+    const final =
+      result.status === 'passed' ||
+      result.status === 'skipped' ||
+      result.status === 'interrupted' ||
+      result.retry >= test.retries
     emit({
       type: 'testEnd',
       key,
       file,
       project: projectOf(test),
       status: result.status,
+      retry: result.retry,
+      final,
       durationMs: result.duration,
       error: err ? String(err).replace(ANSI, '').slice(0, 4000) : undefined
     })

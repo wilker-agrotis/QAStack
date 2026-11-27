@@ -11,6 +11,24 @@ const COLORS: Record<LogLine['level'], string> = {
   info: 'text-purple-300'
 }
 
+function ReportDate(props: { at: string | null }) {
+  if (!props.at) {
+    return <span className="text-[11px] text-slate-500">Nenhum report gerado</span>
+  }
+  const d = new Date(props.at)
+  const date = d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })
+  const time = d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', hour12: false })
+  return (
+    <span
+      className="text-[11px] text-slate-400 flex items-center gap-1 whitespace-nowrap"
+      title={`HTML Report gerado em ${d.toLocaleString('pt-BR', { hour12: false })}. É este report que será aberto ou baixado.`}
+    >
+      <span className="text-slate-500">Report de</span>
+      <span className="font-mono text-slate-300">{date} {time}</span>
+    </span>
+  )
+}
+
 export function ConsolePanel(props: {
   lines: LogLine[]
   command: string
@@ -19,6 +37,8 @@ export function ConsolePanel(props: {
   onReport: () => void
   onDownloadReport: () => void
   canReport: boolean
+  /** Data/hora (ISO) do HTML Report atual; null = ainda não existe. */
+  reportAt: string | null
 }) {
   const [collapsed, setCollapsed] = useState(false)
   const body = useRef<HTMLDivElement>(null)
@@ -45,6 +65,7 @@ export function ConsolePanel(props: {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <ReportDate at={props.reportAt} />
           <button
             onClick={props.onReport}
             disabled={!props.canReport}
